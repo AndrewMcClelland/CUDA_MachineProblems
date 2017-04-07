@@ -9,6 +9,7 @@
 #include <iostream>
 #include <algorithm>
 #include <random>
+#include <ctime>
 
 using namespace std;
 
@@ -21,26 +22,52 @@ __global__ void MatrixMult_Device(const float* d_a, const float* d_b, float* d_c
 	int row = threadIdx.y + (blockIdx.y * blockDim.y);
 	float c_value;
 	
-	
 	if ((column < n) && (row < n)) {
 		c_value = 0;
 		for (int k = 0; k < n; ++k) {
 			c_value += d_a[(n * k) + row] * d_b[(n * column) + k];
 		}
-
 		d_c[(n * column) + row] = c_value;
 	}
 }
 
+// Matrix addition - Part 2
+__global__ void MatrixAddOneN(const float* d_inputMatrix, float* d_oneM,  const int n)
+{
+	int column = threadIdx.x + (blockIdx.x * blockDim.x);
+	int row = threadIdx.y + (blockIdx.y * blockDim.y);
+	float c_value;
+	
+	if ((column < n) && (row < n)) {
+		c_value = 0;
+		for (int k = 0; k < n; ++k) {
+			c_value += d_inputMatrix[(n * k) + row];
+		}
+		d_oneM[row] = c_value;
+	}
+}
+
+// Add all to one result
+__global__ void MatrixAddTotal(const float* d_oneMMatrix, float* d_finalResult,  const int n)
+{
+	int column = threadIdx.x + (blockIdx.x * blockDim.x);
+	int row = threadIdx.y + (blockIdx.y * blockDim.y);
+	if ((column < n) && (row < n)) {
+		*d_finalResult = 0;
+		__syncthreads();
+		atomicAdd(d_finalResult, d_oneMMatrix[column]);
+		__syncthreads();
+	}
+}
 
 // Host code
 int main()
-{
-    cudaEvent_t start, stop;
+{	
+	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
-    const int N = 128;
+    const int N = 2;
 	const int arraySize = N * N;
 	const int arraySizeBytes = arraySize * sizeof(float);
 
@@ -148,6 +175,7 @@ int main()
 	bool correct = true;
 
 	for(int i = 0; i < (N * N); i++) {
+		printf("%f\n", h_c[i]);
 		if(verify_result[i] != h_c[i]){
 			correct = false;
 			break;
@@ -163,5 +191,104 @@ int main()
 
 	// Keeps terminal open until user hits 'Return' on terminal
 	cin.get();
+
+
+	// Machine Problem #2
+	
+	// Using matrix we got from previous part - h_c
+	// we have h_c
+	float *h_oneM;
+	float *d_oneM, *d_inputMatrix;
+
+	// Allocate space for host copies on CPU
+	h_oneM = (float *)malloc(arraySizeBytes/N);
+
+	// Allocate space for device copies on GPU
+	cudaMalloc((void **)& d_oneM, arraySizeBytes/N);
+	cudaMalloc((void **)& d_inputMatrix, arraySizeBytes);
+
+	// Calcualte add on CPU
+	result;
+	for(int i = 0; i < N; ++i) {
+		for(int j = 0; j < N; ++j) {
+			result = 0;
+			for(int k = 0; k < N; ++k) {
+				result += h_c[(N * k) + i];			
+			}
+			h_oneM[i] = result;
+		}
+	}
+	
+	for (int i = 0; i < N; i++)
+	{
+		printf("%f\n", h_oneM[i]);
+	}
+
+	// Copy input matrices from host memory to device memory
+	cudaMemcpy(d_inputMatrix, h_c, arraySizeBytes, cudaMemcpyHostToDevice);
+	
+	// Invoke GPU device function
+	MatrixAddOneN<<<dimGrid, dimBlock>>>(d_inputMatrix, d_oneM, N);
+
+	err = cudaThreadSynchronize();
+	printf("Run kernel: %s\n", cudaGetErrorString(err));
+
+	// Copy result from device to host
+	cudaMemcpy(h_oneM, d_oneM, (arraySizeBytes/N), cudaMemcpyDeviceToHost);
+
+	// print it out
+	for (int i = 0; i < N; ++i)
+	{
+		printf("Printing GPU result from CPU = %f\n", h_oneM[i]);
+	}
+
+	// Free device memory
+	cudaFree(d_oneM);
+	cudaFree(d_inputMatrix);
+
+	// CPU - oneM to total value
+	result = 0;
+	for(int i = 0; i < N; ++i) {
+		result += h_oneM[i];
+	}
+
+	printf("Final Result in CPU is %f\n", result);
+
+	// Now lets do final result in GPU
+	float *h_finalResult;
+	float *d_oneMMatrix, *d_finalResult;
+
+	// Allocate space for host copies on CPU
+	h_finalResult = (float *)malloc(sizeof(float));
+
+	// Allocate space for device copies on GPU
+	cudaMalloc((void **)& d_oneMMatrix, arraySizeBytes/N);
+	cudaMalloc((void **)& d_finalResult, sizeof(float));
+
+	// Copy input matrices from host memory to device memory
+	cudaMemcpy(d_oneMMatrix, h_oneM, arraySizeBytes/N, cudaMemcpyHostToDevice);
+
+	dim3 dimBlock2(BLOCK_WIDTH, 1, 1);
+
+	// Invoke GPU device function
+	MatrixAddTotal<<<dimGrid, dimBlock2>>>(d_oneMMatrix, d_finalResult, N);
+
+	err = cudaThreadSynchronize();
+	printf("Run kernel: %s\n", cudaGetErrorString(err));
+
+	// Copy result from device to host
+	cudaMemcpy(h_finalResult, d_finalResult, (sizeof(float)), cudaMemcpyDeviceToHost);
+
+	printf("Final result from GPU is %f\n", *h_finalResult);
+
+	if (*h_finalResult == result)
+		printf("2nd machine problem verified.");
+	else
+		printf("2nd machine problem failed.");
+
+	cudaFree(d_finalResult);
+	cudaFree(d_oneMMatrix);
+	cin.get();
+
     return 0;
 }
