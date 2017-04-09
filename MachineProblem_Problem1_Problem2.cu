@@ -1,3 +1,9 @@
+/*
+ELEC374 - Machine Problems
+Andrew McClelland
+Student #: 10150229
+NetID: 14amm5
+*/
 
 #include "cuda.h"
 #include "cuda_runtime.h"
@@ -7,7 +13,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <iostream>
-#include <algorithm>
 #include <random>
 #include <ctime>
 
@@ -15,7 +20,7 @@ using namespace std;
 
 #define BLOCK_WIDTH 16
 
-// Device code
+// Problem 1 - NxN matrix multiplication
 __global__ void MatrixMult_Device(const float* d_a, const float* d_b, float* d_c, const int n)
 {
 	int column = threadIdx.x + (blockIdx.x * blockDim.x);
@@ -31,7 +36,7 @@ __global__ void MatrixMult_Device(const float* d_a, const float* d_b, float* d_c
 	}
 }
 
-// Matrix addition - Part 2
+// Problem 2 - NxN to Nx1 summation
 __global__ void MatrixAddOneN(const float* d_inputMatrix, float* d_oneM,  const int n)
 {
 	int column = threadIdx.x + (blockIdx.x * blockDim.x);
@@ -47,7 +52,7 @@ __global__ void MatrixAddOneN(const float* d_inputMatrix, float* d_oneM,  const 
 	}
 }
 
-// Add all to one result
+// Problem 2 - Convert Nx1 to 1x1
 __global__ void MatrixAddTotal(const float* d_oneMMatrix, float* d_finalResult,  const int n)
 {
 	int column = threadIdx.x + (blockIdx.x * blockDim.x);
@@ -67,11 +72,11 @@ int main()
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
-    const int N = 2;
+    const int N = 16;
 	const int arraySize = N * N;
 	const int arraySizeBytes = arraySize * sizeof(float);
 
-	cudaError_t err;
+	printf("----- Machine Problem 1 -----\n");
 
 	float *h_a, *h_b, *h_c, *verify_result;
 	float *d_a, *d_b, *d_c;
@@ -104,23 +109,6 @@ int main()
 		}
 	}
 
-	
-	// Calculate result on CPU
-	float result;
-	clock_t begin = clock();
-	for(int i = 0; i < N; ++i) {
-		for(int j = 0; j < N; ++j) {
-			result = 0;
-			for(int k = 0; k < N; ++k) {
-				result += h_a[(N * k) + i] * h_b[(N * j) + k];				
-			}
-			verify_result[(N * j) + i] = result;
-		}
-	}
-	clock_t end = clock();
-	cout << "CPU multiplication time: " << 1000.0 * (double)(end - begin) / (double)CLOCKS_PER_SEC << endl;
-	
-
 	// Copy input matrices from host memory to device memory
 	cudaEventRecord(start, 0);
 	cudaMemcpy(d_a, h_a, arraySizeBytes, cudaMemcpyHostToDevice);
@@ -138,6 +126,21 @@ int main()
 
 	cudaMemcpy(d_b, h_b, arraySizeBytes, cudaMemcpyHostToDevice);
 	
+	// Calculate result on CPU
+	float result;
+	clock_t begin = clock();
+	for(int i = 0; i < N; ++i) {
+		for(int j = 0; j < N; ++j) {
+			result = 0;
+			for(int k = 0; k < N; ++k) {
+				result += h_a[(N * k) + i] * h_b[(N * j) + k];				
+			}
+			verify_result[(N * j) + i] = result;
+		}
+	}
+	clock_t end = clock();
+	cout << "Time to compute matrix multiplication on CPU: " << 1000.0 * (double)(end - begin) / (double)CLOCKS_PER_SEC << " ms" << endl;
+
 	// Invoke kernel
 	int NumBlocks = N / BLOCK_WIDTH;
 	if (N % BLOCK_WIDTH) NumBlocks++;
@@ -157,11 +160,7 @@ int main()
 
 	cudaEventElapsedTime(&gpu_time, start, stop);
 	// print the GPU times
-	printf("Time spent multiplying matrices on GPU: %.2f\n", gpu_time);
-
-
-	err = cudaThreadSynchronize();
-	printf("Run kernel: %s\n", cudaGetErrorString(err));
+	printf("Time to compute matrix multiplication on GPU:: %f ms\n", gpu_time);
 
 	// Copy result from device to host
 	cudaMemcpy(h_c, d_c, arraySizeBytes, cudaMemcpyDeviceToHost);
@@ -175,7 +174,6 @@ int main()
 	bool correct = true;
 
 	for(int i = 0; i < (N * N); i++) {
-		printf("%f\n", h_c[i]);
 		if(verify_result[i] != h_c[i]){
 			correct = false;
 			break;
@@ -183,10 +181,10 @@ int main()
 	}
 
 	if(correct) {
-		printf("Verification passed :)");
+		printf("\nCPU/GPU matrix multiplication verification passed :)\n\n");
 	}
 	else {
-		printf("Verification failed (:");
+		printf("\nCPU/GPU matrix multiplication verification failed (:\n\n");
 	}
 
 	// Keeps terminal open until user hits 'Return' on terminal
@@ -194,9 +192,10 @@ int main()
 
 
 	// Machine Problem #2
+
+	printf("----- Machine Problem 2 -----\nMatrix size = %d x %d\n", N, N);
 	
-	// Using matrix we got from previous part - h_c
-	// we have h_c
+	// Using NxN result matrix we got from previous part - h_c
 	float *h_oneM;
 	float *d_oneM, *d_inputMatrix;
 
@@ -207,7 +206,7 @@ int main()
 	cudaMalloc((void **)& d_oneM, arraySizeBytes/N);
 	cudaMalloc((void **)& d_inputMatrix, arraySizeBytes);
 
-	// Calcualte add on CPU
+	// Calcualte NxN to Nx1 on CPU
 	result;
 	for(int i = 0; i < N; ++i) {
 		for(int j = 0; j < N; ++j) {
@@ -218,11 +217,6 @@ int main()
 			h_oneM[i] = result;
 		}
 	}
-	
-	for (int i = 0; i < N; i++)
-	{
-		printf("%f\n", h_oneM[i]);
-	}
 
 	// Copy input matrices from host memory to device memory
 	cudaMemcpy(d_inputMatrix, h_c, arraySizeBytes, cudaMemcpyHostToDevice);
@@ -230,29 +224,20 @@ int main()
 	// Invoke GPU device function
 	MatrixAddOneN<<<dimGrid, dimBlock>>>(d_inputMatrix, d_oneM, N);
 
-	err = cudaThreadSynchronize();
-	printf("Run kernel: %s\n", cudaGetErrorString(err));
-
 	// Copy result from device to host
 	cudaMemcpy(h_oneM, d_oneM, (arraySizeBytes/N), cudaMemcpyDeviceToHost);
-
-	// print it out
-	for (int i = 0; i < N; ++i)
-	{
-		printf("Printing GPU result from CPU = %f\n", h_oneM[i]);
-	}
 
 	// Free device memory
 	cudaFree(d_oneM);
 	cudaFree(d_inputMatrix);
 
-	// CPU - oneM to total value
+	// Calculate Nx1 to 1x1 on CPU
 	result = 0;
 	for(int i = 0; i < N; ++i) {
 		result += h_oneM[i];
 	}
 
-	printf("Final Result in CPU is %f\n", result);
+	printf("Final CPU summation result = %f\n", result);
 
 	// Now lets do final result in GPU
 	float *h_finalResult;
@@ -273,18 +258,15 @@ int main()
 	// Invoke GPU device function
 	MatrixAddTotal<<<dimGrid, dimBlock2>>>(d_oneMMatrix, d_finalResult, N);
 
-	err = cudaThreadSynchronize();
-	printf("Run kernel: %s\n", cudaGetErrorString(err));
-
 	// Copy result from device to host
 	cudaMemcpy(h_finalResult, d_finalResult, (sizeof(float)), cudaMemcpyDeviceToHost);
 
-	printf("Final result from GPU is %f\n", *h_finalResult);
+	printf("Final GPU summation result = %f\n\n", *h_finalResult);
 
 	if (*h_finalResult == result)
-		printf("2nd machine problem verified.");
+		printf("CPU/GPU matrix addition verification passed :)\n\n");
 	else
-		printf("2nd machine problem failed.");
+		printf("CPU/GPU matrix multiplication verification failed :(\n\n");
 
 	cudaFree(d_finalResult);
 	cudaFree(d_oneMMatrix);
